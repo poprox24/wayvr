@@ -1,8 +1,4 @@
-use std::{
-    f32::consts::PI,
-    fs::File,
-    sync::{Arc, LazyLock},
-};
+use std::{f32::consts::PI, fs::File, sync::Arc};
 
 use glam::{Quat, Vec3A};
 use openxr as xr;
@@ -31,6 +27,7 @@ pub(super) struct Skybox {
     view: Arc<ImageView>,
     sky: Option<WlxSwapchain>,
     grid: Option<WlxSwapchain>,
+    grid_pose: xr::Posef,
     grid_color_scale_bias_khr: Option<Box<xr::sys::CompositionLayerColorScaleBiasKHR>>,
 }
 
@@ -100,6 +97,7 @@ impl Skybox {
             view,
             sky: None,
             grid: None,
+            grid_pose: translation_rotation_to_posef(Vec3A::ZERO, Quat::from_rotation_x(PI * -0.5)),
             grid_color_scale_bias_khr: grid_color_scale_bias_khr,
         })
     }
@@ -228,10 +226,6 @@ impl Skybox {
         const HI_VERT_ANGLE: f32 = 0.5 * PI;
         const LO_VERT_ANGLE: f32 = -0.5 * PI;
 
-        static GRID_POSE: LazyLock<xr::Posef> = LazyLock::new(|| {
-            translation_rotation_to_posef(Vec3A::ZERO, Quat::from_rotation_x(PI * -0.5))
-        });
-
         let pose = xr::Posef {
             orientation: xr::Quaternionf::IDENTITY,
             position: xr::Vector3f {
@@ -255,11 +249,12 @@ impl Skybox {
             .lower_vertical_angle(LO_VERT_ANGLE);
 
         self.grid.as_mut().unwrap().ensure_image_released()?;
+
         let flags = xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA
             | xr::CompositionLayerFlags::UNPREMULTIPLIED_ALPHA;
         let mut grid = xr::CompositionLayerQuad::new()
             .layer_flags(flags)
-            .pose(*GRID_POSE)
+            .pose(self.grid_pose)
             .size(xr::Extent2Df {
                 width: 10.0,
                 height: 10.0,
@@ -270,7 +265,7 @@ impl Skybox {
 
         if let Some(grid_color_scale_bias_khr) = self.grid_color_scale_bias_khr.as_mut() {
             let grid_opacity = app.session.config.grid_opacity;
-            grid_color_scale_bias_khr.color_scale.a = grid_opacity * grid_opacity;
+            grid_color_scale_bias_khr.color_scale.a = (grid_opacity * grid_opacity).clamp(0.0, 1.0);
             unsafe {
                 let raw = next_chain_insert!(grid, grid_color_scale_bias_khr);
                 grid = xr::CompositionLayerQuad::from_raw(raw);
