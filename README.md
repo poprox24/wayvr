@@ -131,7 +131,10 @@ Typing
 - While using the ORANGE laser, all keystrokes will have SHIFT applied.
 - Purple laser is customizable via the settings, no modifier by default.
 
-**Modifier Keys** are sticky. They will remain pressed until a non-modifier key is pressed, the modifier gets toggled off, or the keyboard gets hidden.
+**Modifier Keys are sticky**. They will remain pressed until eiter:
+- a non-modifier key is pressed
+- the modifier is toggled off by clicking again
+- the keyboard is hidden (including via show-hide)
 
 ### Default Bindings
 
