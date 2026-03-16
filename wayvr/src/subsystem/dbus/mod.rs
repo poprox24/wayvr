@@ -118,7 +118,7 @@ impl DbusConnector {
             body,
             vec![],
             hints,
-            timeout,
+            timeout_ms,
         )?;
         Ok(retval)
     }
