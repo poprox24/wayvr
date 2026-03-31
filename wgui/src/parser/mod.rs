@@ -252,7 +252,7 @@ impl ParserState {
 		Ok(ctx.data_local)
 	}
 
-	/// Instantinate template by saving all the results into the main `ParserState`
+	/// Instantiate template by saving all the results into the main `ParserState`
 	pub fn instantiate_template(
 		&mut self,
 		doc_params: &ParseDocumentParams,
