@@ -13,6 +13,7 @@ use crate::{
 	windowing::window::{WguiWindow, WguiWindowParams, WguiWindowParamsExtra},
 };
 
+#[derive(Clone)]
 pub struct Cell {
 	pub title: Translation,
 	pub tooltip: Option<Translation>,
