@@ -192,6 +192,42 @@ impl Default for Color {
 	}
 }
 
+pub struct HsvColor {
+	pub h: f32,
+	pub s: f32,
+	pub v: f32,
+	pub a: f32,
+}
+
+impl HsvColor {
+	pub const fn new(h: f32, s: f32, v: f32, a: f32) -> Self {
+		Self { h, s, v, a }
+	}
+}
+
+impl From<Color> for HsvColor {
+	fn from(value: Color) -> Self {
+		let max = value.r.max(value.g).max(value.b);
+		let min = value.r.min(value.g).min(value.b);
+		let delta = max - min;
+
+		let h = if delta == 0.0 {
+			0.0
+		} else if max == value.r {
+			(((value.g - value.b) / delta) / 6.0 + 1.0) % 1.0
+		} else if max == value.g {
+			((value.b - value.r) / delta + 2.0) / 6.0
+		} else {
+			((value.r - value.g) / delta + 4.0) / 6.0
+		};
+
+		let s = if max == 0.0 { 0.0 } else { delta / max };
+		let v = max;
+
+		Self::new(h, s, v, value.a)
+	}
+}
+
 #[repr(u8)]
 #[derive(Debug, Default, Clone, Copy)]
 pub enum GradientMode {

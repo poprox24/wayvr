@@ -15,6 +15,8 @@ macro_rules! next_chain_insert {
 }
 pub(crate) use next_chain_insert;
 
+use crate::state::AppState;
+
 pub(super) fn init_xr() -> Result<(xr::Instance, xr::SystemId), anyhow::Error> {
     let entry = xr::Entry::linked();
 
@@ -208,4 +210,22 @@ pub(super) fn posef_to_transform(pose: &xr::Posef) -> Affine3A {
     let rotation = QuatM::from(pose.orientation).into();
     let translation = Vec3M::from(pose.position).into();
     Affine3A::from_rotation_translation(rotation, translation)
+}
+
+pub(super) fn reconfigure_chroma_key(app: &AppState) {
+    let Some(monado) = app.monado_state.as_ref() else {
+        return;
+    };
+
+    let params = &app.session.config.chroma_key_params;
+
+    if let Err(e) = monado.ipc.set_chroma_key_params(
+        params.hsv_min[0]..params.hsv_max[0],
+        params.hsv_min[1]..params.hsv_max[1],
+        params.hsv_min[2]..params.hsv_max[2],
+        params.curve,
+        params.despill,
+    ) {
+        log::warn!("Could not set Chroma Key: {e:?}")
+    }
 }

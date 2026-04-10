@@ -17,7 +17,7 @@ use crate::{
     backend::{
         BackendError, XrBackend,
         input::interact,
-        openxr::{lines::LinePool, overlay::OpenXrOverlayData},
+        openxr::{helpers::reconfigure_chroma_key, lines::LinePool, overlay::OpenXrOverlayData},
         task::{OpenXrTask, OverlayTask, TaskType},
     },
     config::{save_settings, save_state},
@@ -93,6 +93,8 @@ pub fn openxr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
             .map_err(|e| log::warn!("Will not use Monado playspace mover: {e}"))
             .ok()
     });
+
+    reconfigure_chroma_key(&app);
 
     let mut blocker = app
         .monado_state
@@ -489,6 +491,7 @@ pub fn openxr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
                             &mut environment_blend_mode,
                             main_session_visible,
                         );
+                        reconfigure_chroma_key(&app);
                     }
                 }
                 #[cfg(feature = "openvr")]

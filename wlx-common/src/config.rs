@@ -66,6 +66,14 @@ pub enum HandsfreePointer {
 	EyeTrackingOnly,
 }
 
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub struct ChromaKeyParams {
+	pub hsv_min: [f32; 3],
+	pub hsv_max: [f32; 3],
+	pub curve: f32,
+	pub despill: f32,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SerializedWindowSet {
 	pub name: Arc<str>,
@@ -331,4 +339,7 @@ pub struct GeneralConfig {
 
 	#[serde(default = "def_false")]
 	pub keyboard_swipe_to_type_enabled: bool,
+
+	#[serde(default)]
+	pub chroma_key_params: ChromaKeyParams,
 }
