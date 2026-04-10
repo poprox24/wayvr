@@ -231,6 +231,7 @@ enum SettingType {
 	InvertScrollDirectionY,
 	KeyboardMiddleClick,
 	KeyboardSoundEnabled,
+	KeyboardSwipeToTypeEnabled,
 	Language,
 	LeftHandedMouse,
 	LongPressDuration,
@@ -283,6 +284,7 @@ impl SettingType {
 			Self::HideUsername => &mut config.hide_username,
 			Self::OpaqueBackground => &mut config.opaque_background,
 			Self::XwaylandByDefault => &mut config.xwayland_by_default,
+			Self::KeyboardSwipeToTypeEnabled => &mut config.keyboard_swipe_to_type_enabled,
 			_ => panic!("Requested bool for non-bool SettingType"),
 		}
 	}
@@ -381,6 +383,7 @@ impl SettingType {
 			Self::InvertScrollDirectionY => Ok("APP_SETTINGS.INVERT_SCROLL_DIRECTION_Y"),
 			Self::KeyboardMiddleClick => Ok("APP_SETTINGS.KEYBOARD_MIDDLE_CLICK"),
 			Self::KeyboardSoundEnabled => Ok("APP_SETTINGS.KEYBOARD_SOUND_ENABLED"),
+			Self::KeyboardSwipeToTypeEnabled => Ok("APP_SETTINGS.KEYBOARD_SWIPE_TO_TYPE_ENABLED"),
 			Self::Language => Ok("APP_SETTINGS.LANGUAGE"),
 			Self::LeftHandedMouse => Ok("APP_SETTINGS.LEFT_HANDED_MOUSE"),
 			Self::LongPressDuration => Ok("APP_SETTINGS.LONG_PRESS_DURATION"),
@@ -417,6 +420,7 @@ impl SettingType {
 			Self::GridOpacity => Some("APP_SETTINGS.GRID_OPACITY_HELP"),
 			Self::HandsfreePointer => Some("APP_SETTINGS.HANDSFREE_POINTER_HELP"),
 			Self::KeyboardMiddleClick => Some("APP_SETTINGS.KEYBOARD_MIDDLE_CLICK_HELP"),
+			Self::KeyboardSwipeToTypeEnabled => Some("APP_SETTINGS.KEYBOARD_SWIPE_TO_TYPE_ENABLED_HELP"),
 			Self::LeftHandedMouse => Some("APP_SETTINGS.LEFT_HANDED_MOUSE_HELP"),
 			Self::ScreenRenderDown => Some("APP_SETTINGS.SCREEN_RENDER_DOWN_HELP"),
 			Self::UprightScreenFix => Some("APP_SETTINGS.UPRIGHT_SCREEN_FIX_HELP"),

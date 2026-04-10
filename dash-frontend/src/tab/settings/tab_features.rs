@@ -9,6 +9,7 @@ pub fn mount(mp: &mut MacroParams, parent: WidgetID) -> anyhow::Result<()> {
 	options_checkbox(mp, c, SettingType::NotificationsEnabled)?;
 	options_checkbox(mp, c, SettingType::NotificationsSoundEnabled)?;
 	options_checkbox(mp, c, SettingType::KeyboardSoundEnabled)?;
+	options_checkbox(mp, c, SettingType::KeyboardSwipeToTypeEnabled)?;
 	options_checkbox(mp, c, SettingType::SpaceDragUnlocked)?;
 	options_checkbox(mp, c, SettingType::SpaceRotateUnlocked)?;
 	options_slider_f32(mp, c, SettingType::SpaceDragMultiplier, -10.0, 10.0, 0.5)?;
