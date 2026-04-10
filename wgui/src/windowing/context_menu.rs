@@ -94,7 +94,6 @@ impl ContextMenu {
 		let globals = layout.state.globals.clone();
 
 		self.window.open(&mut WguiWindowParams {
-			globals: &globals,
 			layout,
 			position: params.position,
 			extra: WguiWindowParamsExtra {

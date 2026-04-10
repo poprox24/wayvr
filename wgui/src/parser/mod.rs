@@ -1,6 +1,7 @@
 mod component_bar_graph;
 mod component_button;
 mod component_checkbox;
+mod component_color_selector;
 mod component_editbox;
 mod component_radio_group;
 mod component_slider;
@@ -25,6 +26,7 @@ use crate::{
 		component_bar_graph::parse_component_bar_graph,
 		component_button::parse_component_button,
 		component_checkbox::{CheckboxKind, parse_component_checkbox},
+		component_color_selector::parse_component_color_selector,
 		component_editbox::parse_component_editbox,
 		component_radio_group::parse_component_radio_group,
 		component_slider::parse_component_slider,
@@ -1063,6 +1065,7 @@ fn parse_child<'a>(
 		"Slider" => {
 			new_widget_id = Some(parse_component_slider(ctx, parent_id, &attribs, tag_name)?);
 		}
+		"ColorSelector" => new_widget_id = Some(parse_component_color_selector(ctx, parent_id, &attribs, tag_name)?),
 		"CheckBox" => {
 			new_widget_id = Some(parse_component_checkbox(
 				ctx,

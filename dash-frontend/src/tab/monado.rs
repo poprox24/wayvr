@@ -267,7 +267,6 @@ impl SubtabGeneralSettings {
 				let tasks = tasks.clone();
 				Box::new(move |_common, e| {
 					tasks.push(Task::SetBrightness(e.value / 100.0));
-					Ok(())
 				})
 			});
 		}

@@ -823,8 +823,10 @@ impl View {
 		slider.on_value_changed({
 			let control = params.control.clone();
 			Box::new(move |_common, event| {
-				control.on_volume_change(event.value * VOLUME_MULT)?;
-				Ok(())
+				if let Err(e) = control.on_volume_change(event.value * VOLUME_MULT) {
+					log::error!("{:?}", e);
+					debug_assert!(false);
+				};
 			})
 		});
 

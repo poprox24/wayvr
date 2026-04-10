@@ -485,7 +485,6 @@ impl<T: 'static> Frontend<T> {
 
 	fn action_show_audio_settings(&mut self) -> anyhow::Result<()> {
 		self.window_audio_settings.open(&mut WguiWindowParams {
-			globals: &self.globals,
 			position: Vec2::new(64.0, 64.0),
 			layout: &mut self.layout,
 			extra: WguiWindowParamsExtra {

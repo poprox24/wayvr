@@ -674,7 +674,6 @@ fn set_up_slider(
             OverlaySelector::Id(*overlay_id.borrow()),
             Box::new(move |app, owc| callback(app, owc, e_value)),
         )));
-        Ok(())
     }));
 
     Ok(())

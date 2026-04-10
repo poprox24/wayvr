@@ -339,15 +339,14 @@ impl Layout {
 	}
 
 	fn process_pending_components(&mut self, alterables: &mut EventAlterables) {
-		for comp in &self.components_to_refresh_once {
+		for comp in std::mem::take(&mut self.components_to_refresh_once) {
 			let mut common = CallbackDataCommon {
 				state: &self.state,
 				alterables,
 			};
 
-			comp.0.refresh(&mut RefreshData { common: &mut common });
+			comp.0.refresh(&mut RefreshData { layout: self });
 		}
-		self.components_to_refresh_once.clear();
 	}
 
 	fn process_pending_widget_ticks(&mut self, alterables: &mut EventAlterables) {

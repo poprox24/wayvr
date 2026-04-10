@@ -102,7 +102,7 @@ impl Boundary {
 	}
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Color {
 	pub r: f32,
 	pub g: f32,
@@ -177,6 +177,14 @@ impl Color {
 		let b = (self.b.clamp(0.0, 1.0) * 255.0).round() as u8;
 		let a = (self.a.clamp(0.0, 1.0) * 255.0).round() as u8;
 		format!("#{r:02X}{g:02X}{b:02X}{a:02X}")
+	}
+
+	#[must_use]
+	pub fn to_hex_rgb(&self) -> String {
+		let r = (self.r.clamp(0.0, 1.0) * 255.0).round() as u8;
+		let g = (self.g.clamp(0.0, 1.0) * 255.0).round() as u8;
+		let b = (self.b.clamp(0.0, 1.0) * 255.0).round() as u8;
+		format!("#{r:02X}{g:02X}{b:02X}")
 	}
 
 	#[must_use]

@@ -118,7 +118,6 @@ pub fn options_slider_f32(
 		let tasks = mp.tasks.clone();
 		move |_common, e| {
 			tasks.push(Task::UpdateFloat(setting, e.value));
-			Ok(())
 		}
 	}));
 
@@ -168,7 +167,6 @@ pub fn options_slider_i32(
 		let tasks = mp.tasks.clone();
 		move |_common, e| {
 			tasks.push(Task::UpdateInt(setting, e.value as i32));
-			Ok(())
 		}
 	}));
 	Ok(())
