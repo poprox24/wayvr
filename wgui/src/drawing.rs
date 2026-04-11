@@ -211,6 +211,32 @@ impl HsvColor {
 	pub const fn new(h: f32, s: f32, v: f32, a: f32) -> Self {
 		Self { h, s, v, a }
 	}
+
+	pub fn to_rgb(&self) -> Color {
+		if self.s == 0.0 {
+			// gray
+			return Color::new(self.v, self.v, self.v, 1.0);
+		}
+
+		let h6 = self.h * 6.0;
+		let i = h6.floor();
+		let f = h6 - i;
+
+		let p = self.v * (1.0 - self.s);
+		let q = self.v * (1.0 - self.s * f);
+		let t = self.v * (1.0 - self.s * (1.0 - f));
+
+		let (r, g, b) = match i as i32 % 6 {
+			0 => (self.v, t, p),
+			1 => (q, self.v, p),
+			2 => (p, self.v, t),
+			3 => (p, q, self.v),
+			4 => (t, p, self.v),
+			_ => (self.v, p, q),
+		};
+
+		Color::new(r, g, b, 1.0)
+	}
 }
 
 impl From<Color> for HsvColor {

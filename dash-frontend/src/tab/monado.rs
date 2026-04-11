@@ -6,7 +6,8 @@ use wgui::{
 		bar_graph::{ComponentBarGraph, ValueCell},
 		button::ComponentButton,
 		checkbox::ComponentCheckbox,
-		slider::ComponentSlider,
+		color_selector::{ColorSelectorChangedCallback, ComponentColorSelector},
+		slider::{ComponentSlider, SliderValueChangedCallback},
 		tabs::ComponentTabs,
 	},
 	drawing::Color,
@@ -15,7 +16,10 @@ use wgui::{
 	parser::{self, Fetchable, ParseDocumentParams, ParserState},
 	task::Tasks,
 };
-use wlx_common::dash_interface::{self, MonadoDumpSessionFrame};
+use wlx_common::{
+	config::GeneralConfig,
+	dash_interface::{self, MonadoDumpSessionFrame},
+};
 
 use crate::{
 	frontend::Frontend,
@@ -40,6 +44,7 @@ impl TabNameEnum {
 	}
 }
 
+#[derive(Clone)]
 enum Task {
 	SetBrightness(f32),
 	SetTab(TabNameEnum),
@@ -51,6 +56,8 @@ enum Task {
 	// `DebugTimings` tab
 	DebugTimingsRefreshSessionList,
 	DebugTimingsSetSessionId(i64),
+
+	GeneralSettingsChromaUpdate,
 }
 
 struct SubtabProcessList {
@@ -62,6 +69,13 @@ struct SubtabProcessList {
 struct SubtabGeneralSettings {
 	#[allow(dead_code)]
 	state: ParserState,
+
+	slider_keying_curve: Rc<ComponentSlider>,
+	slider_keying_despill: Rc<ComponentSlider>,
+	slider_keying_hue_range: Rc<ComponentSlider>,
+	slider_keying_saturation_range: Rc<ComponentSlider>,
+	slider_keying_value_range: Rc<ComponentSlider>,
+	cs_keying: Rc<ComponentColorSelector>,
 }
 
 struct DebugGraph {
@@ -158,6 +172,12 @@ impl<T> Tab<T> for TabMonado<T> {
 						tab.set_session_id(&mut frontend.layout, session_id)?;
 					}
 				}
+				Task::GeneralSettingsChromaUpdate => {
+					if let Subtab::GeneralSettings(tab) = &mut self.subtab {
+						tab.chroma_update(frontend.interface.general_config(data));
+						frontend.interface.config_changed(data);
+					}
+				}
 				Task::SetBrightness(brightness) => self.set_brightness(frontend, data, brightness),
 				Task::SetTab(tab) => {
 					frontend.layout.remove_children(self.id_content);
@@ -243,6 +263,8 @@ fn yesno(n: bool) -> &'static str {
 	}
 }
 
+const SLIDER_MULTIPLIER: f32 = 100.0;
+
 impl SubtabGeneralSettings {
 	fn new<T>(
 		parent_id: WidgetID,
@@ -271,7 +293,84 @@ impl SubtabGeneralSettings {
 			});
 		}
 
-		Ok(Self { state })
+		let config = frontend.interface.general_config(data);
+
+		let cs_keying = state.fetch_component_as::<ComponentColorSelector>("cs_keying")?;
+		let slider_keying_despill = state.fetch_component_as::<ComponentSlider>("slider_keying_despill")?;
+		let slider_keying_curve = state.fetch_component_as::<ComponentSlider>("slider_keying_curve")?;
+		let slider_keying_hue_range = state.fetch_component_as::<ComponentSlider>("slider_keying_hue_range")?;
+		let slider_keying_saturation_range =
+			state.fetch_component_as::<ComponentSlider>("slider_keying_saturation_range")?;
+		let slider_keying_value_range = state.fetch_component_as::<ComponentSlider>("slider_keying_value_range")?;
+
+		{
+			let mut lc = frontend.layout.start_common();
+			let mut common = lc.common();
+
+			// set initial values
+			let (rgb, range_h, range_s, range_v) = config.chroma_key_params.get_rgb_and_hsv_ranges();
+			slider_keying_curve.set_value(&mut common, config.chroma_key_params.curve * SLIDER_MULTIPLIER);
+			slider_keying_despill.set_value(&mut common, config.chroma_key_params.despill * SLIDER_MULTIPLIER);
+			slider_keying_hue_range.set_value(&mut common, range_h * SLIDER_MULTIPLIER);
+			slider_keying_saturation_range.set_value(&mut common, range_s * SLIDER_MULTIPLIER);
+			slider_keying_value_range.set_value(&mut common, range_v * SLIDER_MULTIPLIER);
+			cs_keying.set_color(&mut common, rgb);
+
+			// prepare callbacks
+			fn get_slider_callback(tasks: &Tasks<Task>) -> SliderValueChangedCallback {
+				Box::new({
+					let tasks = tasks.clone();
+					move |_, _| {
+						tasks.push(Task::GeneralSettingsChromaUpdate);
+					}
+				})
+			}
+
+			fn get_color_selector_callback(tasks: &Tasks<Task>) -> ColorSelectorChangedCallback {
+				Box::new({
+					let tasks = tasks.clone();
+					move |_, _| {
+						tasks.push(Task::GeneralSettingsChromaUpdate);
+					}
+				})
+			}
+			slider_keying_curve.on_value_changed(get_slider_callback(&tasks));
+			slider_keying_despill.on_value_changed(get_slider_callback(&tasks));
+			slider_keying_hue_range.on_value_changed(get_slider_callback(&tasks));
+			slider_keying_saturation_range.on_value_changed(get_slider_callback(&tasks));
+			slider_keying_value_range.on_value_changed(get_slider_callback(&tasks));
+			cs_keying.on_changed(get_color_selector_callback(&tasks));
+
+			lc.finish()?;
+		}
+
+		Ok(Self {
+			state,
+			slider_keying_curve,
+			slider_keying_despill,
+			slider_keying_hue_range,
+			slider_keying_saturation_range,
+			slider_keying_value_range,
+			cs_keying,
+		})
+	}
+
+	fn chroma_update(&mut self, config: &mut GeneralConfig) {
+		let val_curve = self.slider_keying_curve.get_value();
+		let val_despill = self.slider_keying_despill.get_value();
+		let val_range_h = self.slider_keying_hue_range.get_value();
+		let val_range_s = self.slider_keying_saturation_range.get_value();
+		let val_range_v = self.slider_keying_value_range.get_value();
+		let val_rgb = self.cs_keying.get_color();
+
+		config.chroma_key_params.despill = val_despill / SLIDER_MULTIPLIER;
+		config.chroma_key_params.curve = val_curve / SLIDER_MULTIPLIER;
+		config.chroma_key_params.update_hsv_range_from_rgb(
+			val_rgb,
+			val_range_h / SLIDER_MULTIPLIER,
+			val_range_s / SLIDER_MULTIPLIER,
+			val_range_v / SLIDER_MULTIPLIER,
+		);
 	}
 }
 
