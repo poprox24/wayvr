@@ -21,14 +21,12 @@ use wgui::{
 };
 use wlx_common::async_executor::AsyncExecutor;
 
-pub struct Params<'a> {
-	pub globals: &'a WguiGlobals,
-	pub layout: &'a mut Layout,
-	pub executor: &'a AsyncExecutor,
-	pub parent_id: WidgetID,
+pub struct Params {
+	pub globals: WguiGlobals,
+	pub executor: AsyncExecutor,
 	pub target_path: PathBuf,
 	pub url: String,
-	pub on_close_request: Box<dyn FnOnce()>,
+	pub on_downloaded: Box<dyn FnOnce()>,
 }
 
 #[derive(Clone)]
@@ -41,7 +39,6 @@ enum Task {
 }
 
 pub struct View {
-	id_parent: WidgetID,
 	globals: WguiGlobals,
 	tasks: Tasks<Task>,
 	executor: AsyncExecutor,
@@ -53,9 +50,10 @@ pub struct View {
 	id_loading_parent: WidgetID,
 	id_content: WidgetID,
 	on_close_request: Option<Box<dyn FnOnce()>>,
+	on_downloaded: Option<Box<dyn FnOnce()>>,
 }
 
-fn doc_params(globals: &WguiGlobals) -> ParseDocumentParams {
+fn doc_params(globals: &WguiGlobals) -> ParseDocumentParams<'_> {
 	ParseDocumentParams {
 		globals: globals.clone(),
 		path: AssetPath::BuiltIn("gui/view/download_file.xml"),
@@ -68,10 +66,18 @@ impl ViewTrait for View {
 		for task in self.tasks.drain() {
 			match task {
 				Task::StartDownload(url, path) => {
-					self
-						.executor
-						.spawn(View::download(self.tasks.clone(), self.executor.clone(), url, path))
-						.detach();
+					if let Some(on_downloaded) = self.on_downloaded.take() {
+						self
+							.executor
+							.spawn(View::download(
+								self.tasks.clone(),
+								self.executor.clone(),
+								url,
+								path,
+								on_downloaded,
+							))
+							.detach();
+					}
 				}
 				Task::SetStatusText(text) => {
 					let widgets = &mut par.layout.state.widgets;
@@ -137,28 +143,31 @@ where
 }
 
 impl View {
-	pub fn new(par: Params) -> anyhow::Result<Self> {
+	pub fn new(
+		layout: &mut Layout,
+		id_parent: WidgetID,
+		on_close_request: Box<dyn FnOnce()>,
+		par: Params,
+	) -> anyhow::Result<Self> {
 		let tasks = Tasks::<Task>::new();
 
-		let parser_state = wgui::parser::parse_from_assets(&doc_params(&par.globals), par.layout, par.parent_id)?;
+		let parser_state = wgui::parser::parse_from_assets(&doc_params(&par.globals), layout, id_parent)?;
 		let id_label_status = parser_state.get_widget_id("label_status")?;
 		let id_content = parser_state.get_widget_id("content")?;
 		let id_loading_parent = parser_state.get_widget_id("loading_parent")?;
 
 		wgui_simple::create_loading(wgui_simple::CreateLoadingParams {
 			parent_id: id_loading_parent,
-			layout: par.layout,
+			layout: layout,
 			with_text: false,
 		})?;
 
 		let str_target_path = par.globals.i18n().translate("TARGET_PATH");
 
 		{
-			let label_target_path = parser_state
-				.fetch_widget(&par.layout.state, "label_target_path")?
-				.widget;
+			let label_target_path = parser_state.fetch_widget(&layout.state, "label_target_path")?.widget;
 			label_target_path.cast::<WidgetLabel>()?.set_text(
-				&mut par.layout.common(),
+				&mut layout.common(),
 				Translation::from_raw_text_string(format!("{}: {}", str_target_path, par.target_path.display())),
 			);
 		}
@@ -166,7 +175,6 @@ impl View {
 		tasks.push(Task::StartDownload(par.url, par.target_path));
 
 		Ok(Self {
-			id_parent: par.parent_id,
 			tasks,
 			globals: par.globals.clone(),
 			executor: par.executor.clone(),
@@ -174,11 +182,18 @@ impl View {
 			id_label_status,
 			id_loading_parent,
 			id_content,
-			on_close_request: Some(par.on_close_request),
+			on_close_request: Some(on_close_request),
+			on_downloaded: Some(par.on_downloaded),
 		})
 	}
 
-	async fn download(tasks: Tasks<Task>, executor: AsyncExecutor, url: String, target_path: PathBuf) -> Option<()> {
+	async fn download(
+		tasks: Tasks<Task>,
+		executor: AsyncExecutor,
+		url: String,
+		target_path: PathBuf,
+		on_downloaded: Box<dyn FnOnce()>,
+	) -> Option<()> {
 		tasks.push(Task::SetStatusText(String::from("Connecting to the server...")));
 
 		// start downloading from the server with progress reporting
@@ -223,18 +238,17 @@ impl View {
 		tasks.push(Task::SetStatusText(String::from("Download finished")));
 		tasks.push(Task::ShowIconSuccess);
 
+		on_downloaded();
+
 		None
 	}
 }
 
 pub fn mount_popup(
-	frontend_tasks: FrontendTasks,
-	executor: AsyncExecutor,
-	globals: WguiGlobals,
 	popup: PopupHolder<View>,
-	target_path: PathBuf,
-	url: String,
+	frontend_tasks: FrontendTasks,
 	on_view_close: Box<dyn FnOnce()>,
+	params: Params,
 ) {
 	frontend_tasks
 		.clone()
@@ -242,15 +256,7 @@ pub fn mount_popup(
 			Translation::from_translation_key("DOWNLOADER"),
 			Box::new(move |data| {
 				let on_close_request = popup.get_close_callback(data.layout);
-				let view = View::new(Params {
-					globals: &globals,
-					layout: data.layout,
-					executor: &executor,
-					parent_id: data.id_content,
-					on_close_request,
-					target_path,
-					url,
-				})?;
+				let view = View::new(data.layout, data.id_content, on_close_request, params)?;
 
 				popup.set_view(data.handle, view, Some(on_view_close));
 				Ok(popup.get_close_callback(data.layout))

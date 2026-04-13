@@ -1,12 +1,9 @@
-use std::{collections::HashMap, path::PathBuf, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 
 use crate::{
 	frontend::{FrontendTask, FrontendTasks},
 	util::{
-		networking::{
-			self,
-			skymap_catalog::{SkymapCatalogEntry, SkymapResolution},
-		},
+		networking::{self, skymap_catalog::SkymapResolution},
 		popup_manager::{MountPopupOnceParams, PopupHolder},
 	},
 	views::{self, ViewTrait, ViewUpdateParams},
@@ -32,18 +29,19 @@ pub struct Params<'a> {
 	pub frontend_tasks: FrontendTasks,
 	pub parent_id: WidgetID,
 	pub entry: networking::skymap_catalog::SkymapCatalogEntry,
-	pub on_close_request: Box<dyn FnOnce()>,
-	pub preview_image: Option<CustomGlyphData>,
+	pub preview_image: CustomGlyphData,
+	pub preview_image_compressed: Rc<Vec<u8>>,
+	pub on_updated_library: Rc<dyn Fn()>,
 }
 
 #[derive(Clone)]
 enum Task {
 	Refresh,
 	ResolutionClicked(networking::skymap_catalog::SkymapResolution),
+	DownloadFinished,
 }
 
 pub struct View {
-	id_parent: WidgetID,
 	entry: networking::skymap_catalog::SkymapCatalogEntry,
 	frontend_tasks: FrontendTasks,
 	globals: WguiGlobals,
@@ -56,6 +54,8 @@ pub struct View {
 	parser_state: ParserState,
 
 	popup_download: PopupHolder<views::download_file::View>,
+	preview_image_compressed: Rc<Vec<u8>>,
+	on_updated_library: Rc<dyn Fn()>,
 }
 
 fn mount_resolution_button(
@@ -96,6 +96,9 @@ impl ViewTrait for View {
 				Task::Refresh => {
 					self.refresh(par.layout)?;
 				}
+				Task::DownloadFinished => {
+					self.download_finished()?;
+				}
 			}
 		}
 
@@ -104,23 +107,7 @@ impl ViewTrait for View {
 	}
 }
 
-fn get_skymap_resolution_full_path(entry: &SkymapCatalogEntry, resolution: SkymapResolution) -> Option<PathBuf> {
-	let Some(filename) = entry.files.get_filename_from_res(resolution) else {
-		return None;
-	};
-
-	Some(config_io::get_skymaps_root().join(filename))
-}
-
-fn is_downloaded(entry: &SkymapCatalogEntry, resolution: SkymapResolution) -> anyhow::Result<bool> {
-	let Some(full_path) = get_skymap_resolution_full_path(entry, resolution) else {
-		return Ok(false);
-	};
-
-	Ok(std::fs::exists(full_path)?)
-}
-
-fn doc_params(globals: &WguiGlobals) -> ParseDocumentParams {
+fn doc_params(globals: &WguiGlobals) -> ParseDocumentParams<'_> {
 	ParseDocumentParams {
 		globals: globals.clone(),
 		path: AssetPath::BuiltIn("gui/view/remote_skymap_downloader.xml"),
@@ -132,7 +119,7 @@ impl View {
 	pub fn new(par: Params) -> anyhow::Result<Self> {
 		let tasks = Tasks::<Task>::new();
 
-		let mut parser_state = wgui::parser::parse_from_assets(&doc_params(&par.globals), par.layout, par.parent_id)?;
+		let parser_state = wgui::parser::parse_from_assets(&doc_params(&par.globals), par.layout, par.parent_id)?;
 		let id_resolution_buttons = parser_state.get_widget_id("resolution_buttons")?;
 
 		let str_version = par.globals.i18n().translate("VERSION");
@@ -141,7 +128,7 @@ impl View {
 
 		let image = parser_state.fetch_widget(&par.layout.state, "image")?.widget;
 		let mut image = image.cast::<WidgetImage>()?;
-		image.set_content(&mut par.layout.alterables, par.preview_image);
+		image.set_content(&mut par.layout.alterables, Some(par.preview_image));
 
 		// Set author label
 		parser_state
@@ -186,7 +173,6 @@ impl View {
 		tasks.push(Task::Refresh);
 
 		Ok(Self {
-			id_parent: par.parent_id,
 			tasks,
 			globals: par.globals.clone(),
 			executor: par.executor.clone(),
@@ -195,6 +181,8 @@ impl View {
 			frontend_tasks: par.frontend_tasks,
 			popup_download: Default::default(),
 			id_resolution_buttons,
+			preview_image_compressed: par.preview_image_compressed,
+			on_updated_library: par.on_updated_library,
 		})
 	}
 
@@ -210,7 +198,7 @@ impl View {
 				self.id_resolution_buttons,
 				res,
 				&self.tasks,
-				is_downloaded(&self.entry, res)?,
+				self.entry.is_downloaded(res)?,
 			)
 		};
 
@@ -224,23 +212,44 @@ impl View {
 		Ok(())
 	}
 
+	fn download_finished(&mut self) -> anyhow::Result<()> {
+		self.entry.save_metadata()?;
+		let mut uuids = config_io::get_skymaps_uuids().unwrap_or_default();
+		let uuid_str = self.entry.uuid.to_string();
+		if !uuids.contains(&uuid_str) {
+			uuids.push(uuid_str);
+		}
+		config_io::set_skymaps_uuids(&uuids)?;
+
+		// Save preview image
+		let preview_path = config_io::get_skymaps_root().join(&self.entry.files.preview);
+		std::fs::write(preview_path, self.preview_image_compressed.as_ref())?;
+
+		(*self.on_updated_library)();
+
+		Ok(())
+	}
+
 	fn run_download(&mut self, resolution: SkymapResolution) -> anyhow::Result<()> {
 		let Some(url) = self.entry.files.get_url_from_res(resolution) else {
 			return Ok(());
 		};
 
-		let Some(full_path) = get_skymap_resolution_full_path(&self.entry, resolution) else {
+		let Some(target_path) = self.entry.get_destination_path(resolution) else {
 			return Ok(());
 		};
 
 		views::download_file::mount_popup(
-			self.frontend_tasks.clone(),
-			self.executor.clone(),
-			self.globals.clone(),
 			self.popup_download.clone(),
-			full_path,
-			url,
+			self.frontend_tasks.clone(),
 			self.tasks.make_callback_box(Task::Refresh),
+			views::download_file::Params {
+				globals: self.globals.clone(),
+				executor: self.executor.clone(),
+				target_path,
+				url,
+				on_downloaded: self.tasks.make_callback_box(Task::DownloadFinished),
+			},
 		);
 		Ok(())
 	}
@@ -251,7 +260,9 @@ pub fn mount_popup(
 	executor: AsyncExecutor,
 	globals: WguiGlobals,
 	entry: networking::skymap_catalog::SkymapCatalogEntry,
-	preview_image: Option<CustomGlyphData>,
+	preview_image: CustomGlyphData,
+	preview_image_compressed: Rc<Vec<u8>>,
+	on_updated_library: Rc<dyn Fn()>,
 	popup: PopupHolder<View>,
 ) {
 	frontend_tasks
@@ -259,16 +270,16 @@ pub fn mount_popup(
 		.push(FrontendTask::MountPopupOnce(MountPopupOnceParams::new(
 			Translation::from_raw_text(&entry.name),
 			Box::new(move |data| {
-				let on_close_request = popup.get_close_callback(data.layout);
 				let view = View::new(Params {
 					globals: &globals,
 					layout: data.layout,
 					executor: &executor,
 					parent_id: data.id_content,
 					entry,
-					on_close_request,
 					preview_image,
 					frontend_tasks: frontend_tasks.clone(),
+					preview_image_compressed,
+					on_updated_library,
 				})?;
 
 				popup.set_view(data.handle, view, None);

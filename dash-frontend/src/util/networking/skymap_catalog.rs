@@ -2,14 +2,14 @@
 use std::path::PathBuf;
 
 // TODO: Remove later
-use serde::Deserialize;
-use wlx_common::async_executor::AsyncExecutor;
+use serde::{Deserialize, Serialize};
+use wlx_common::{async_executor::AsyncExecutor, config_io};
 
 use crate::util::networking::{self, WAYVR_SKYMAPS_ROOT, http_client};
 
 pub type SkymapUuid = uuid::Uuid;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize, Debug)]
 pub enum SkymapResolution {
 	Res2k,
 	Res4k,
@@ -26,7 +26,7 @@ impl SkymapResolution {
 	}
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SkymapCatalogEntryFiles {
 	pub size_8k: Option<String>, // "my_skymap_8k.png"
 	pub size_4k: Option<String>, // "my_skymap_4k.png"
@@ -63,7 +63,7 @@ impl SkymapCatalogEntryFiles {
 	}
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SkymapCatalogEntry {
 	pub uuid: SkymapUuid,
 	pub created_at: String,
@@ -73,6 +73,34 @@ pub struct SkymapCatalogEntry {
 	pub description: String,
 	pub author: String,
 	pub files: SkymapCatalogEntryFiles,
+}
+
+impl SkymapCatalogEntry {
+	pub fn get_destination_path(&self, resolution: SkymapResolution) -> Option<PathBuf> {
+		let Some(filename) = self.files.get_filename_from_res(resolution) else {
+			return None;
+		};
+
+		Some(config_io::get_skymaps_root().join(filename))
+	}
+
+	pub fn get_destination_metadata_path(&self) -> PathBuf {
+		config_io::get_skymaps_root().join(format!("{}.json", self.uuid))
+	}
+
+	pub fn is_downloaded(&self, resolution: SkymapResolution) -> anyhow::Result<bool> {
+		let Some(full_path) = self.get_destination_path(resolution) else {
+			return Ok(false);
+		};
+
+		Ok(std::fs::exists(full_path)?)
+	}
+
+	pub fn save_metadata(&self) -> anyhow::Result<()> {
+		let json = serde_json::to_string_pretty(self)?;
+		std::fs::write(self.get_destination_metadata_path(), json)?;
+		Ok(())
+	}
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -103,4 +131,22 @@ pub async fn request_catalog(executor: &AsyncExecutor) -> anyhow::Result<SkymapC
 	catalog.validate()?;
 
 	Ok(catalog)
+}
+
+pub fn get_entries_from_disk() -> anyhow::Result<Vec<SkymapCatalogEntry>> {
+	let mut entries = Vec::<SkymapCatalogEntry>::new();
+
+	let skymaps_root = config_io::get_skymaps_root();
+
+	for uuid in config_io::get_skymaps_uuids().unwrap_or_default() {
+		let metadata_path = skymaps_root.join(format!("{}.json", uuid));
+		let Ok(data) = std::fs::read_to_string(metadata_path) else {
+			continue;
+		};
+
+		let entry = serde_json::from_str::<SkymapCatalogEntry>(&data)?;
+		entries.push(entry);
+	}
+
+	Ok(entries)
 }

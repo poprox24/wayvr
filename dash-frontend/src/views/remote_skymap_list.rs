@@ -29,25 +29,33 @@ pub struct Params<'a> {
 	pub layout: &'a mut Layout,
 	pub executor: &'a AsyncExecutor,
 	pub parent_id: WidgetID,
-	pub on_close_request: Box<dyn FnOnce()>,
 	pub frontend_tasks: FrontendTasks,
+	pub on_updated_library: Rc<dyn Fn()>,
 }
 
 #[derive(Clone)]
 enum Task {
 	SetSkymapCatalog(Rc<anyhow::Result<networking::skymap_catalog::SkymapCatalog>>),
-	SetSkymapPreview((SkymapUuid, Option<CustomGlyphData>)),
+	SetSkymapPreview(
+		(
+			SkymapUuid,
+			Option<(
+				CustomGlyphData, /* ready-to-use preview image data */
+				Rc<Vec<u8>>,     /* compressed preview image data (should weigh about 10-15 KiB) */
+			)>,
+		),
+	),
 	ShowRemoteSkymapDownloader(SkymapUuid),
 }
 
 struct MountedCell {
 	skymap_uuid: SkymapUuid,
 	view: views::skymap_list_cell::View,
+	preview_image_compressed: Option<Rc<Vec<u8>>>,
 }
 
 pub struct View {
 	id_parent: WidgetID,
-	id_list: WidgetID,
 	id_loading: WidgetID,
 	globals: WguiGlobals,
 	tasks: Tasks<Task>,
@@ -56,6 +64,7 @@ pub struct View {
 	frontend_tasks: FrontendTasks,
 	catalog: Option<networking::skymap_catalog::SkymapCatalog>,
 	popup_remote_skymap_downloader: PopupHolder<views::remote_skymap_downloader::View>,
+	on_updated_library: Rc<dyn Fn()>,
 }
 
 impl ViewTrait for View {
@@ -77,18 +86,26 @@ impl ViewTrait for View {
 						)?,
 					}
 				}
-				Task::SetSkymapPreview((skymap_uuid, glyph_data)) => {
+				Task::SetSkymapPreview((skymap_uuid, opt_preview_image)) => {
 					if let Some(cell) = &mut self
 						.mounted_cells
 						.iter_mut()
 						.find(|cell| cell.skymap_uuid == skymap_uuid)
 					{
-						cell.view.set_image(par.layout, glyph_data)?;
+						if let Some((preview_image, preview_image_compressed)) = opt_preview_image {
+							cell.view.set_image(par.layout, Some(preview_image))?;
+							cell.preview_image_compressed = Some(preview_image_compressed);
+						} else {
+							cell.view.set_image(par.layout, None)?;
+						}
 					}
 				}
 				Task::ShowRemoteSkymapDownloader(skymap_uuid) => {
-					let preview_image = self.get_image_preview(skymap_uuid);
-					self.show_remote_skymap_downloader(skymap_uuid, preview_image)?;
+					if let Some((preview_image, preview_image_compressed)) = self.get_image_preview(skymap_uuid) {
+						self.show_remote_skymap_downloader(skymap_uuid, preview_image, preview_image_compressed)?;
+					} else {
+						log::error!("preview image not present, ignoring request");
+					}
 				}
 			}
 		}
@@ -113,7 +130,6 @@ impl View {
 		par.executor.spawn(fut).detach();
 		Ok(Self {
 			id_parent: par.parent_id,
-			id_list: WidgetID::default(),
 			id_loading,
 			tasks,
 			globals: par.globals.clone(),
@@ -122,6 +138,7 @@ impl View {
 			frontend_tasks: par.frontend_tasks,
 			catalog: None,
 			popup_remote_skymap_downloader: Default::default(),
+			on_updated_library: par.on_updated_library,
 		})
 	}
 
@@ -131,10 +148,12 @@ impl View {
 		entry: SkymapCatalogEntry,
 		tasks: Tasks<Task>,
 	) {
-		let glyph_data = networking::image_fetch::fetch_to_glyph_data(&globals, &executor, &entry.files.get_url_preview())
-			.await
-			.ok();
-		tasks.push(Task::SetSkymapPreview((entry.uuid, glyph_data)));
+		tasks.push(Task::SetSkymapPreview((
+			entry.uuid,
+			networking::image_fetch::fetch_to_glyph_data(&globals, &executor, &entry.files.get_url_preview())
+				.await
+				.ok(),
+		)));
 	}
 
 	fn mount_catalog(
@@ -163,6 +182,7 @@ impl View {
 			let skymap_uuid = entry.uuid.clone();
 
 			self.mounted_cells.push(MountedCell {
+				preview_image_compressed: None,
 				skymap_uuid: entry.uuid.clone(),
 				view: views::skymap_list_cell::View::new(views::skymap_list_cell::Params {
 					id_parent: id_list,
@@ -184,7 +204,8 @@ impl View {
 	fn show_remote_skymap_downloader(
 		&mut self,
 		uuid: SkymapUuid,
-		preview_image: Option<CustomGlyphData>,
+		preview_image: CustomGlyphData,
+		preview_image_compressed: Rc<Vec<u8>>,
 	) -> anyhow::Result<()> {
 		let Some(catalog) = &self.catalog else {
 			debug_assert!(false); // impossible
@@ -202,15 +223,27 @@ impl View {
 			self.globals.clone(),
 			entry.clone(),
 			preview_image,
+			preview_image_compressed,
+			self.on_updated_library.clone(),
 			self.popup_remote_skymap_downloader.clone(),
 		);
 
 		Ok(())
 	}
 
-	fn get_image_preview(&self, skymap_uuid: SkymapUuid) -> Option<CustomGlyphData> {
+	fn get_image_preview(
+		&self,
+		skymap_uuid: SkymapUuid,
+	) -> Option<(CustomGlyphData, Rc<Vec<u8>> /* preview_image_compressed */)> {
 		if let Some(cell) = &self.mounted_cells.iter().find(|mc| mc.skymap_uuid == skymap_uuid) {
-			return cell.view.get_image();
+			let Some(image) = cell.view.get_image() else {
+				return None;
+			};
+
+			let Some(preview_image_compressed) = cell.preview_image_compressed.clone() else {
+				return None;
+			};
+			return Some((image, preview_image_compressed));
 		}
 		None
 	}
@@ -220,6 +253,7 @@ pub fn mount_popup(
 	frontend_tasks: FrontendTasks,
 	executor: AsyncExecutor,
 	globals: WguiGlobals,
+	on_updated_library: Rc<dyn Fn()>,
 	popup: PopupHolder<View>,
 ) {
 	frontend_tasks
@@ -227,14 +261,13 @@ pub fn mount_popup(
 		.push(FrontendTask::MountPopupOnce(MountPopupOnceParams::new(
 			Translation::from_translation_key("APP_SETTINGS.DOWNLOAD_SKYMAPS"),
 			Box::new(move |data| {
-				let on_close_request = popup.get_close_callback(data.layout);
 				let view = View::new(Params {
 					globals: &globals,
 					layout: data.layout,
 					executor: &executor,
 					parent_id: data.id_content,
-					on_close_request,
 					frontend_tasks,
+					on_updated_library,
 				})?;
 
 				popup.set_view(data.handle, view, None);
