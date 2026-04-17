@@ -18,7 +18,7 @@ use wgui::{
 };
 use wlx_common::{
 	config::GeneralConfig,
-	dash_interface::{self, MonadoDumpSessionFrame},
+	dash_interface::{self, ConfigChangeKind, MonadoDumpSessionFrame},
 };
 
 use crate::{
@@ -175,7 +175,7 @@ impl<T> Tab<T> for TabMonado<T> {
 				Task::GeneralSettingsChromaUpdate => {
 					if let Subtab::GeneralSettings(tab) = &mut self.subtab {
 						tab.chroma_update(frontend.interface.general_config(data));
-						frontend.interface.config_changed(data);
+						frontend.interface.config_changed(data, ConfigChangeKind::EnvironmentBlend);
 					}
 				}
 				Task::SetBrightness(brightness) => self.set_brightness(frontend, data, brightness),

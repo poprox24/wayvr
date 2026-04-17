@@ -19,7 +19,7 @@ use wgui::{
 	},
 	windowing::context_menu::{self, Blueprint, ContextMenu, TickResult},
 };
-use wlx_common::{config::GeneralConfig, config_io::ConfigRoot, dash_interface::RecenterMode};
+use wlx_common::{config::GeneralConfig, config_io::ConfigRoot, dash_interface::{ConfigChangeKind, RecenterMode}};
 
 use crate::{
 	frontend::{Frontend, FrontendTask, FrontendTasks},
@@ -224,7 +224,7 @@ impl<T> Tab<T> for TabSettings<T> {
 
 		// Notify overlays of the change
 		if changed {
-			frontend.interface.config_changed(data);
+			frontend.interface.config_changed(data, ConfigChangeKind::OverlayConfig);
 		}
 
 		Ok(())

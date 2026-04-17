@@ -65,9 +65,15 @@ pub trait DashInterface<T> {
 	fn recenter_playspace(&mut self, data: &mut T, mode: RecenterMode) -> anyhow::Result<()>;
 	fn desktop_finder<'a>(&'a mut self, data: &'a mut T) -> &'a mut DesktopFinder;
 	fn general_config<'a>(&'a mut self, data: &'a mut T) -> &'a mut GeneralConfig;
-	fn config_changed(&mut self, data: &mut T);
+	fn config_changed(&mut self, data: &mut T, kind: ConfigChangeKind);
 	fn restart(&mut self, data: &mut T);
 	fn toggle_dashboard(&mut self, data: &mut T);
+}
+
+#[derive(Clone, Copy)]
+pub enum ConfigChangeKind {
+	OverlayConfig,
+	EnvironmentBlend,
 }
 
 pub type BoxDashInterface<T> = Box<dyn DashInterface<T>>;
