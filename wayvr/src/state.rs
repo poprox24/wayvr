@@ -218,6 +218,8 @@ pub struct AppSession {
     pub config: GeneralConfig,
     pub config_dirty: bool,
 
+    pub no_autostart: bool,
+
     pub toast_topics: IdMap<ToastTopic, ToastDisplayMethod>,
 }
 
@@ -240,6 +242,7 @@ impl AppSession {
         Self {
             config,
             toast_topics,
+            no_autostart: false,
             config_dirty: false,
         }
     }

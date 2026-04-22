@@ -73,8 +73,12 @@ impl DashFrontend {
     fn new(app: &mut AppState) -> anyhow::Result<Self> {
         let mut interface = DashInterfaceLive::new();
 
-        for p in app.session.config.autostart_apps.clone() {
-            let _ = interface.process_launch(app, false, p);
+        if app.session.no_autostart {
+            log::info!("Not starting apps due to --no-autostart")
+        } else {
+            for p in app.session.config.autostart_apps.clone() {
+                let _ = interface.process_launch(app, false, p);
+            }
         }
 
         let frontend = frontend::Frontend::new(frontend::InitParams {

@@ -53,7 +53,11 @@ struct XrState {
 }
 
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-pub fn openxr_run(show_by_default: bool, headless: bool) -> Result<(), BackendError> {
+pub fn openxr_run(
+    show_by_default: bool,
+    headless: bool,
+    no_autostart: bool,
+) -> Result<(), BackendError> {
     let (xr_instance, system) = match helpers::init_xr() {
         Ok((xr_instance, system)) => (xr_instance, system),
         Err(e) => {
@@ -66,6 +70,8 @@ pub fn openxr_run(show_by_default: bool, headless: bool) -> Result<(), BackendEr
         let (gfx, gfx_extras) = init_openxr_graphics(xr_instance.clone(), system)?;
         AppState::from_graphics(gfx, gfx_extras, XrBackend::OpenXR)?
     };
+
+    app.session.no_autostart = no_autostart;
 
     let modes = xr_instance.enumerate_environment_blend_modes(system, VIEW_TYPE)?;
 
