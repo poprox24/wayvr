@@ -19,7 +19,11 @@ use wgui::{
 	},
 	windowing::context_menu::{self, Blueprint, ContextMenu, TickResult},
 };
-use wlx_common::{config::GeneralConfig, config_io::ConfigRoot, dash_interface::{ConfigChangeKind, RecenterMode}};
+use wlx_common::{
+	config::GeneralConfig,
+	config_io::ConfigRoot,
+	dash_interface::{ConfigChangeKind, RecenterMode},
+};
 
 use crate::{
 	frontend::{Frontend, FrontendTask, FrontendTasks},
@@ -110,13 +114,21 @@ impl<T> Tab<T> for TabSettings<T> {
 
 	fn update(&mut self, frontend: &mut Frontend<T>, _time_ms: u32, data: &mut T) -> anyhow::Result<()> {
 		if let Some(tab) = &mut self.current_tab {
+			let mut config_change_kind = None;
+
 			tab.update(&mut ViewUpdateParams {
 				layout: &mut frontend.layout,
 				executor: &frontend.executor,
+				general_config: frontend.interface.general_config(data),
+				config_change_kind: &mut config_change_kind,
 			})?;
+
+			if let Some(kind) = config_change_kind {
+				frontend.interface.config_changed(data, kind);
+			}
 		}
 
-		let mut changed = false;
+		let mut changed = None;
 		for task in self.tasks.drain() {
 			match task {
 				Task::SetTab(tab) => {
@@ -129,7 +141,7 @@ impl<T> Tab<T> for TabSettings<T> {
 					}
 					let config = frontend.interface.general_config(data);
 					*setting.mut_bool(config) = n;
-					changed = true;
+					changed = Some(setting.change_kind());
 				}
 				Task::UpdateFloat(setting, n) => {
 					self.tasks.push(Task::SettingUpdated(setting));
@@ -138,7 +150,7 @@ impl<T> Tab<T> for TabSettings<T> {
 					}
 					let config = frontend.interface.general_config(data);
 					*setting.mut_f32(config) = n;
-					changed = true;
+					changed = Some(setting.change_kind());
 				}
 				Task::UpdateInt(setting, n) => {
 					self.tasks.push(Task::SettingUpdated(setting));
@@ -147,7 +159,7 @@ impl<T> Tab<T> for TabSettings<T> {
 					}
 					let config = frontend.interface.general_config(data);
 					*setting.mut_i32(config) = n;
-					changed = true;
+					changed = Some(setting.change_kind());
 				}
 				Task::ClearPipewireTokens => {
 					let _ = std::fs::remove_file(ConfigRoot::Generic.get_conf_d_path().join("pw_tokens.yaml"))
@@ -186,7 +198,7 @@ impl<T> Tab<T> for TabSettings<T> {
 						let config = frontend.interface.general_config(data);
 						config.autostart_apps.remove(idx);
 						frontend.layout.remove_widget(widget);
-						changed = true;
+						changed = Some(ConfigChangeKind::OverlayConfig);
 					}
 				}
 				Task::SettingUpdated(setting) => match setting {
@@ -219,12 +231,12 @@ impl<T> Tab<T> for TabSettings<T> {
 			let setting = SettingType::from_str(setting).expect("Invalid Enum string");
 			let config = frontend.interface.general_config(data);
 			setting.set_enum(config, value);
-			changed = true;
+			changed = Some(ConfigChangeKind::OverlayConfig);
 		}
 
 		// Notify overlays of the change
-		if changed {
-			frontend.interface.config_changed(data, ConfigChangeKind::OverlayConfig);
+		if let Some(changed) = changed {
+			frontend.interface.config_changed(data, changed);
 		}
 
 		Ok(())
@@ -277,6 +289,13 @@ enum SettingType {
 }
 
 impl SettingType {
+	pub fn change_kind(self) -> ConfigChangeKind {
+		match self {
+			Self::UseSkybox | Self::UsePassthrough => ConfigChangeKind::EnvironmentBlend,
+			_ => ConfigChangeKind::OverlayConfig,
+		}
+	}
+
 	pub fn mut_bool(self, config: &mut GeneralConfig) -> &mut bool {
 		match self {
 			Self::InvertScrollDirectionX => &mut config.invert_scroll_direction_x,

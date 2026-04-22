@@ -9,7 +9,7 @@ use wgui::{
 	renderer_vk::text::custom_glyph::CustomGlyphData,
 	task::Tasks,
 };
-use wlx_common::{async_executor::AsyncExecutor, config_io};
+use wlx_common::{async_executor::AsyncExecutor, config::GeneralConfig, config_io, dash_interface::ConfigChangeKind};
 
 use crate::{
 	frontend::{FrontendTask, FrontendTasks},
@@ -75,7 +75,7 @@ impl ViewTrait for View {
 						self.show_skymap_resolution_selector(entry);
 					}
 					Task::SetSkymap(entry, resolution) => {
-						self.set_skymap(entry, resolution)?;
+						self.set_skymap(entry, resolution, par.general_config, par.config_change_kind)?;
 					}
 				}
 			}
@@ -132,16 +132,23 @@ impl View {
 		Ok(())
 	}
 
-	fn set_skymap(&mut self, entry: SkymapCatalogEntry, resolution: SkymapResolution) -> anyhow::Result<()> {
+	fn set_skymap(
+		&mut self,
+		entry: SkymapCatalogEntry,
+		resolution: SkymapResolution,
+		config: &mut GeneralConfig,
+		change_kind: &mut Option<ConfigChangeKind>,
+	) -> anyhow::Result<()> {
 		let skymap_file_path = entry
 			.get_destination_path(resolution)
 			.context("Skymap not found" /* you shouldn't really see this, like ever. */)?;
 
-		log::error!(
-			"not implemented (skymap path to be loaded: {} with resolution {:?})",
-			skymap_file_path.to_string_lossy(),
-			resolution
-		);
+		config.skybox_texture = config_io::get_skymaps_root()
+			.join(skymap_file_path)
+			.to_str()
+			.context("Skymap filename not valid UTF-8")?
+			.into();
+		*change_kind = Some(ConfigChangeKind::EnvironmentBlend);
 
 		Ok(())
 	}

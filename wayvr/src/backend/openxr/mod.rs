@@ -569,6 +569,9 @@ fn reconfigure_environment_blend(
                 log::debug!("Allocating skybox.");
                 *skybox = create_skybox(xr_state, app);
             }
+        } else {
+            log::debug!("Allocating skybox.");
+            *skybox = create_skybox(xr_state, app);
         }
     } else {
         log::debug!("Destroying skybox.");

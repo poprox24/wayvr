@@ -214,6 +214,7 @@ pub(super) fn posef_to_transform(pose: &xr::Posef) -> Affine3A {
 
 pub(super) fn try_apply_chroma_key(app: &AppState) -> bool {
     let Some(monado) = app.monado_state.as_ref() else {
+        log::warn!("Could not set Chroma Key: no monado_state");
         return false;
     };
 
@@ -230,6 +231,5 @@ pub(super) fn try_apply_chroma_key(app: &AppState) -> bool {
         return false;
     }
 
-    // if all values were non-0, assume we're in chroma key mode
-    params.hsv_max[0] * params.hsv_max[1] * params.hsv_max[2] * params.curve > 0.001
+    params.curve > 0.001
 }

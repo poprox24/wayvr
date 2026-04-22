@@ -27,11 +27,19 @@ impl<T> Tab<T> for TabGames<T> {
 		TabType::Games
 	}
 
-	fn update(&mut self, frontend: &mut Frontend<T>, time_ms: u32, _data: &mut T) -> anyhow::Result<()> {
+	fn update(&mut self, frontend: &mut Frontend<T>, time_ms: u32, data: &mut T) -> anyhow::Result<()> {
+		let mut config_change_kind = None;
+
 		self.view_game_list.update(&mut ViewUpdateParams {
 			layout: &mut frontend.layout,
-			executor: &mut frontend.executor,
+			executor: &frontend.executor,
+			general_config: frontend.interface.general_config(data),
+			config_change_kind: &mut config_change_kind,
 		})?;
+
+		if let Some(kind) = config_change_kind {
+			frontend.interface.config_changed(data, kind);
+		}
 
 		self.view_running_games_list.update(&mut frontend.layout, time_ms)?;
 		Ok(())
