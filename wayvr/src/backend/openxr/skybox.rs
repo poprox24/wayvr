@@ -29,6 +29,7 @@ pub(super) struct Skybox {
     grid: Option<WlxSwapchain>,
     grid_pose: xr::Posef,
     grid_color_scale_bias_khr: Option<Box<xr::sys::CompositionLayerColorScaleBiasKHR>>,
+    current_skybox: Arc<str>,
 }
 
 impl Skybox {
@@ -66,6 +67,12 @@ impl Skybox {
             }
         }
 
+        let current_skybox = if maybe_image.is_some() {
+            app.session.config.skybox_texture.clone()
+        } else {
+            "".into()
+        };
+
         if maybe_image.is_none() {
             let p = include_bytes!("../../res/table_mountain_2.dds");
             maybe_image = Some(command_buffer.upload_image_dds(p.as_slice())?);
@@ -99,7 +106,12 @@ impl Skybox {
             grid: None,
             grid_pose: translation_rotation_to_posef(Vec3A::ZERO, Quat::from_rotation_x(PI * -0.5)),
             grid_color_scale_bias_khr,
+            current_skybox,
         })
+    }
+
+    pub(super) fn needs_recreate(&self, app: &AppState) -> bool {
+        *self.current_skybox != *app.session.config.skybox_texture
     }
 
     fn prepare_sky<'a>(

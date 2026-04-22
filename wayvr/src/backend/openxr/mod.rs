@@ -17,7 +17,7 @@ use crate::{
     backend::{
         BackendError, XrBackend,
         input::interact,
-        openxr::{helpers::reconfigure_chroma_key, lines::LinePool, overlay::OpenXrOverlayData},
+        openxr::{helpers::try_apply_chroma_key, lines::LinePool, overlay::OpenXrOverlayData},
         task::{OpenXrTask, OverlayTask, TaskType},
     },
     config::{save_settings, save_state},
@@ -99,8 +99,6 @@ pub fn openxr_run(
             .map_err(|e| log::warn!("Will not use Monado playspace mover: {e}"))
             .ok()
     });
-
-    reconfigure_chroma_key(&app);
 
     let mut blocker = app
         .monado_state
@@ -488,7 +486,7 @@ pub fn openxr_run(
                     }
                 }
                 TaskType::OpenXR(task) => {
-                    if matches!(task, OpenXrTask::SettingsChanged) {
+                    if matches!(task, OpenXrTask::EnvironmentChanged) {
                         reconfigure_environment_blend(
                             &app,
                             &xr_state,
@@ -497,7 +495,6 @@ pub fn openxr_run(
                             &mut environment_blend_mode,
                             main_session_visible,
                         );
-                        reconfigure_chroma_key(&app);
                     }
                 }
                 #[cfg(feature = "openvr")]
@@ -538,6 +535,9 @@ pub(super) enum CompositionLayer<'a> {
     Equirect2(xr::CompositionLayerEquirect2KHR<'a, xr::Vulkan>),
 }
 
+// applies chroma key settings.
+// if chroma key or passthrough is enabled, use alpha env blend
+// if alpha blend is not used and skybox is enabled, use skybox
 fn reconfigure_environment_blend(
     app: &AppState,
     xr_state: &XrState,
@@ -546,9 +546,11 @@ fn reconfigure_environment_blend(
     environment_blend_mode: &mut xr::EnvironmentBlendMode,
     main_session_visible: bool,
 ) {
+    let has_chroma_key = try_apply_chroma_key(app);
+
     *environment_blend_mode = {
         if modes.contains(&xr::EnvironmentBlendMode::ALPHA_BLEND)
-            && app.session.config.use_passthrough
+            && (app.session.config.use_passthrough || has_chroma_key)
         {
             xr::EnvironmentBlendMode::ALPHA_BLEND
         } else {
@@ -560,13 +562,14 @@ fn reconfigure_environment_blend(
         && app.session.config.use_skybox
         && !main_session_visible;
 
-    if want_skybox == skybox.is_some() {
-        return;
-    }
-
     if want_skybox {
-        log::debug!("Allocating skybox.");
-        *skybox = create_skybox(xr_state, app);
+        if let Some(curr_skybox) = skybox.as_ref() {
+            if curr_skybox.needs_recreate(app) {
+                *skybox = None;
+                log::debug!("Allocating skybox.");
+                *skybox = create_skybox(xr_state, app);
+            }
+        }
     } else {
         log::debug!("Destroying skybox.");
         *skybox = None;

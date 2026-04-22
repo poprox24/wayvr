@@ -16,7 +16,7 @@ use wgui::{
     widget::EventResult,
 };
 use wlx_common::{
-    dash_interface::{self, DashInterface, RecenterMode},
+    dash_interface::{self, ConfigChangeKind, DashInterface, RecenterMode},
     locale::WayVRLangProvider,
     overlays::{BackendAttrib, BackendAttribValue},
 };
@@ -448,16 +448,22 @@ impl DashInterface<AppState> for DashInterfaceLive {
         &mut data.session.config
     }
 
-    fn config_changed(&mut self, data: &mut AppState) {
+    fn config_changed(&mut self, data: &mut AppState, kind: ConfigChangeKind) {
         data.session.config_dirty = true;
-        #[cfg(feature = "openxr")]
-        {
-            use crate::backend::task::OpenXrTask;
-            data.tasks
-                .enqueue(TaskType::OpenXR(OpenXrTask::SettingsChanged));
+
+        match kind {
+            ConfigChangeKind::OverlayConfig => data
+                .tasks
+                .enqueue(TaskType::Overlay(OverlayTask::SettingsChanged)),
+            ConfigChangeKind::EnvironmentBlend => {
+                #[cfg(feature = "openxr")]
+                {
+                    use crate::backend::task::OpenXrTask;
+                    data.tasks
+                        .enqueue(TaskType::OpenXR(OpenXrTask::EnvironmentChanged));
+                }
+            }
         }
-        data.tasks
-            .enqueue(TaskType::Overlay(OverlayTask::SettingsChanged));
     }
 
     fn restart(&mut self, _data: &mut AppState) {

@@ -5,7 +5,6 @@ use wgui::{
 	assets::AssetPath,
 	components::tabs::ComponentTabs,
 	drawing,
-	event::{CallbackDataCommon, EventAlterables},
 	globals::WguiGlobals,
 	i18n::Translation,
 	layout::{Layout, WidgetID},
@@ -20,11 +19,12 @@ use wgui::{
 	},
 	windowing::context_menu::{self, Blueprint, ContextMenu, TickResult},
 };
-use wlx_common::{config::GeneralConfig, config_io::ConfigRoot, dash_interface::RecenterMode};
+use wlx_common::{config::GeneralConfig, config_io::ConfigRoot, dash_interface::{ConfigChangeKind, RecenterMode}};
 
 use crate::{
-	frontend::{Frontend, FrontendTask},
+	frontend::{Frontend, FrontendTask, FrontendTasks},
 	tab::{Tab, TabType, settings::macros::MacroParams},
+	views::ViewUpdateParams,
 };
 
 mod macros;
@@ -33,6 +33,7 @@ mod tab_controls;
 mod tab_features;
 mod tab_look_and_feel;
 mod tab_misc;
+mod tab_skybox;
 mod tab_troubleshooting;
 
 #[derive(Clone)]
@@ -43,6 +44,7 @@ enum TabNameEnum {
 	Misc,
 	AutostartApps,
 	Troubleshooting,
+	Skybox,
 }
 
 impl TabNameEnum {
@@ -54,6 +56,7 @@ impl TabNameEnum {
 			"misc" => Some(TabNameEnum::Misc),
 			"autostart_apps" => Some(TabNameEnum::AutostartApps),
 			"troubleshooting" => Some(TabNameEnum::Troubleshooting),
+			"skybox" => Some(TabNameEnum::Skybox),
 			_ => None,
 		}
 	}
@@ -75,14 +78,29 @@ enum Task {
 	SetTab(TabNameEnum),
 }
 
+struct SettingsMountParams<'a> {
+	mp: &'a mut MacroParams<'a>,
+	frontend_tasks: &'a FrontendTasks,
+	id_parent: WidgetID,
+}
+
+trait SettingsTab {
+	fn update(&mut self, _par: &mut ViewUpdateParams) -> anyhow::Result<()> {
+		Ok(())
+	}
+}
+
 pub struct TabSettings<T> {
 	pub state: ParserState,
 
 	app_button_ids: Vec<Rc<str>>,
 	context_menu: ContextMenu,
 
+	current_tab: Option<Box<dyn SettingsTab>>,
+
 	tasks: Tasks<Task>,
 	marker: PhantomData<T>,
+	frontend_tasks: FrontendTasks,
 }
 
 impl<T> Tab<T> for TabSettings<T> {
@@ -91,6 +109,13 @@ impl<T> Tab<T> for TabSettings<T> {
 	}
 
 	fn update(&mut self, frontend: &mut Frontend<T>, _time_ms: u32, data: &mut T) -> anyhow::Result<()> {
+		if let Some(tab) = &mut self.current_tab {
+			tab.update(&mut ViewUpdateParams {
+				layout: &mut frontend.layout,
+				executor: &frontend.executor,
+			})?;
+		}
+
 		let mut changed = false;
 		for task in self.tasks.drain() {
 			match task {
@@ -179,15 +204,10 @@ impl<T> Tab<T> for TabSettings<T> {
 				let mut s = name.splitn(5, ';');
 				(s.next(), s.next(), s.next(), s.next(), s.next())
 			} {
+			let mut common = frontend.layout.common();
 			let mut label = self
 				.state
-				.fetch_widget_as::<WidgetLabel>(&frontend.layout.state, &format!("{id}_value"))?;
-
-			let mut alterables = EventAlterables::default();
-			let mut common = CallbackDataCommon {
-				alterables: &mut alterables,
-				state: &frontend.layout.state,
-			};
+				.fetch_widget_as::<WidgetLabel>(&common.state, &format!("{id}_value"))?;
 
 			let translation = Translation {
 				text: text.into(),
@@ -204,7 +224,7 @@ impl<T> Tab<T> for TabSettings<T> {
 
 		// Notify overlays of the change
 		if changed {
-			frontend.interface.config_changed(data);
+			frontend.interface.config_changed(data, ConfigChangeKind::OverlayConfig);
 		}
 
 		Ok(())
@@ -500,6 +520,7 @@ impl<T> TabSettings<T> {
 		let root = self.state.get_widget_id("settings_root")?;
 		frontend.layout.remove_children(root);
 		let globals = frontend.layout.state.globals.clone();
+		self.current_tab = None;
 
 		let mut mp = MacroParams {
 			layout: &mut frontend.layout,
@@ -510,24 +531,36 @@ impl<T> TabSettings<T> {
 			idx: 9001,
 		};
 
+		let settings_mount_params = SettingsMountParams {
+			mp: &mut mp,
+			id_parent: root,
+			frontend_tasks: &self.frontend_tasks,
+		};
+
 		match name {
 			TabNameEnum::LookAndFeel => {
-				tab_look_and_feel::mount(&mut mp, root)?;
+				self.current_tab = Some(Box::new(tab_look_and_feel::State::mount(settings_mount_params)?));
 			}
 			TabNameEnum::Features => {
-				tab_features::mount(&mut mp, root)?;
+				self.current_tab = Some(Box::new(tab_features::State::mount(settings_mount_params)?));
 			}
 			TabNameEnum::Controls => {
-				tab_controls::mount(&mut mp, root)?;
+				self.current_tab = Some(Box::new(tab_controls::State::mount(settings_mount_params)?));
 			}
 			TabNameEnum::Misc => {
-				tab_misc::mount(&mut mp, root)?;
+				self.current_tab = Some(Box::new(tab_misc::State::mount(settings_mount_params)?));
 			}
 			TabNameEnum::AutostartApps => {
-				tab_autostart_apps::mount(&mut mp, root, &mut self.app_button_ids)?;
+				self.current_tab = Some(Box::new(tab_autostart_apps::State::mount(
+					settings_mount_params,
+					&mut self.app_button_ids,
+				)?));
 			}
 			TabNameEnum::Troubleshooting => {
-				tab_troubleshooting::mount(&mut mp, root)?;
+				self.current_tab = Some(Box::new(tab_troubleshooting::State::mount(settings_mount_params)?));
+			}
+			TabNameEnum::Skybox => {
+				self.current_tab = Some(Box::new(tab_skybox::State::mount(settings_mount_params)?));
 			}
 		}
 
@@ -562,6 +595,8 @@ impl<T> TabSettings<T> {
 			state: parser_state,
 			marker: PhantomData,
 			context_menu: ContextMenu::default(),
+			current_tab: None,
+			frontend_tasks: frontend.tasks.clone(),
 		})
 	}
 }
