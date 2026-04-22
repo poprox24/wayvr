@@ -8,7 +8,7 @@ use crate::{
 	globals::WguiGlobals,
 	i18n::Translation,
 	layout::Layout,
-	parser::{self, Fetchable, ParserState},
+	parser::{self, Fetchable, ParserData, ParserState},
 	task::Tasks,
 	windowing::window::{WguiWindow, WguiWindowParams, WguiWindowParamsExtra},
 };
@@ -117,7 +117,7 @@ impl ContextMenu {
 				par.insert(Rc::from("tooltip_str"), tooltip.generate(&mut globals.i18n()));
 			}
 
-			let mut data_cell = inner_parser.realize_template(&doc_params, "Cell", layout, id_buttons, par)?;
+			let mut data_cell = inner_parser.parse_template_only(&doc_params, "Cell", layout, id_buttons, par)?;
 
 			let button = data_cell.fetch_component_as::<ComponentButton>("button")?;
 			let button_id = button.base().get_id();

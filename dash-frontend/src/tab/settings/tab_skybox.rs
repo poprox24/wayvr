@@ -39,7 +39,7 @@ impl State {
 	pub fn mount(par: SettingsMountParams) -> anyhow::Result<Self> {
 		let id_category = options_category(par.mp, par.id_parent, "APP_SETTINGS.SKYBOX", "dashboard/globe.svg")?;
 		options_checkbox(par.mp, id_category, SettingType::UseSkybox)?;
-		options_checkbox(par.mp, id_category, SettingType::OpaqueBackground)?;
+		options_checkbox(par.mp, id_category, SettingType::UsePassthrough)?;
 
 		let tasks = Tasks::<Task>::new();
 
