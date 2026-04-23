@@ -8,6 +8,7 @@ use crate::{
 	},
 	views::{self, ViewTrait, ViewUpdateParams},
 };
+use anyhow::Context;
 use wgui::{
 	assets::AssetPath,
 	components::button::ComponentButton,
@@ -20,7 +21,7 @@ use wgui::{
 	task::Tasks,
 	widget::{image::WidgetImage, label::WidgetLabel},
 };
-use wlx_common::{async_executor::AsyncExecutor, config_io};
+use wlx_common::{async_executor::AsyncExecutor, config_io, dash_interface::ConfigChangeKind};
 
 pub struct Params<'a> {
 	pub globals: &'a WguiGlobals,
@@ -41,6 +42,7 @@ enum Task {
 	DownloadFinished,
 	RunDownload(SkymapResolution),
 	RemoveFile(SkymapResolution),
+	SetSkymap(SkymapResolution),
 }
 
 pub struct View {
@@ -108,6 +110,19 @@ impl ViewTrait for View {
 				}
 				Task::RemoveFile(resolution) => {
 					self.remove_file(resolution)?;
+				}
+				Task::SetSkymap(resolution) => {
+					let skymap_file_path = self
+						.entry
+						.get_destination_path(resolution)
+						.context("Skymap not found" /* you shouldn't really see this, like ever. */)?;
+
+					par.general_config.skybox_texture = config_io::get_skymaps_root()
+						.join(skymap_file_path)
+						.to_str()
+						.context("Skymap filename not valid UTF-8")?
+						.into();
+					*par.config_change_kind = Some(ConfigChangeKind::EnvironmentBlend);
 				}
 			}
 		}
@@ -237,6 +252,7 @@ impl View {
 	fn show_dialog_box_action(&mut self, resolution: SkymapResolution) -> anyhow::Result<()> {
 		const ACTION_REMOVE: &'static str = "remove";
 		const ACTION_DOWNLOAD_AGAIN: &'static str = "download_again";
+		const ACTION_APPLY: &'static str = "apply";
 
 		let tasks = self.tasks.clone();
 
@@ -257,6 +273,11 @@ impl View {
 						icon: "dashboard/download.svg",
 						action: ACTION_DOWNLOAD_AGAIN,
 					},
+					views::dialog_box::ButtonEntry {
+						content: Translation::from_translation_key("APPLY"),
+						icon: "dashboard/check.svg",
+						action: ACTION_APPLY,
+					},
 				],
 				on_action_click: Box::new(move |action| match action {
 					ACTION_REMOVE => {
@@ -265,6 +286,10 @@ impl View {
 					}
 					ACTION_DOWNLOAD_AGAIN => {
 						tasks.push(Task::RunDownload(resolution));
+						tasks.push(Task::Refresh);
+					}
+					ACTION_APPLY => {
+						tasks.push(Task::SetSkymap(resolution));
 						tasks.push(Task::Refresh);
 					}
 					_ => unreachable!(),
