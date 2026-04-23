@@ -476,6 +476,13 @@ impl DashInterface<AppState> for DashInterfaceLive {
             .enqueue(TaskType::Overlay(OverlayTask::ToggleDashboard));
     }
 
+    fn get_feats(&mut self, data: &mut AppState) -> dash_interface::InterfaceFeats {
+        dash_interface::InterfaceFeats {
+            openxr: matches!(data.xr_backend, XrBackend::OpenXR),
+            monado: data.monado_state.is_some(),
+        }
+    }
+
     #[cfg(feature = "openxr")]
     fn monado_client_list(
         &mut self,

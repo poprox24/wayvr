@@ -43,6 +43,12 @@ pub enum RecenterMode {
 	Reset,
 }
 
+#[derive(Clone, Copy)]
+pub struct InterfaceFeats {
+	pub openxr: bool,
+	pub monado: bool,
+}
+
 pub trait DashInterface<T> {
 	fn window_list(&mut self, data: &mut T) -> anyhow::Result<Vec<WvrWindow>>;
 	fn window_set_visible(&mut self, data: &mut T, handle: WvrWindowHandle, visible: bool) -> anyhow::Result<()>;
@@ -68,6 +74,7 @@ pub trait DashInterface<T> {
 	fn config_changed(&mut self, data: &mut T, kind: ConfigChangeKind);
 	fn restart(&mut self, data: &mut T);
 	fn toggle_dashboard(&mut self, data: &mut T);
+	fn get_feats(&mut self, data: &mut T) -> InterfaceFeats;
 }
 
 #[derive(Clone, Copy)]

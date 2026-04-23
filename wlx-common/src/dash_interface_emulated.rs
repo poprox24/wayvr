@@ -236,6 +236,13 @@ impl DashInterface<()> for DashInterfaceEmulated {
 
 	fn toggle_dashboard(&mut self, _data: &mut ()) {}
 
+	fn get_feats(&mut self, _data: &mut ()) -> dash_interface::InterfaceFeats {
+		dash_interface::InterfaceFeats {
+			openxr: true,
+			monado: true,
+		}
+	}
+
 	fn monado_client_list(
 		&mut self,
 		_data: &mut (),
