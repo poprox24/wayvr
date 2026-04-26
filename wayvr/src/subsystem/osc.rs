@@ -18,6 +18,8 @@ pub struct OscSender {
     last_sent_overlay: Instant,
     last_sent_device: Instant,
     upstream: UdpSocket,
+    last_alt_click: bool,
+    alt_click_toggle: bool,
 }
 
 impl OscSender {
@@ -36,6 +38,8 @@ impl OscSender {
             upstream,
             last_sent_overlay: Instant::now(),
             last_sent_device: Instant::now(),
+            last_alt_click: false,
+            alt_click_toggle: false,
         })
     }
 
@@ -57,10 +61,22 @@ impl OscSender {
         &mut self,
         overlay_manager: &OverlayWindowManager<D>,
         devices: &Vec<TrackedDevice>,
+        input_state: &crate::backend::input::InputState,
     ) -> anyhow::Result<()>
     where
         D: Default,
     {
+        let alt_click_now = input_state.pointers.iter().any(|p| p.now.alt_click);
+
+        if alt_click_now && !self.last_alt_click {
+            self.alt_click_toggle = !self.alt_click_toggle;
+            self.send_message(
+                "/avatar/parameters/vapeVisible".into(),
+                vec![OscType::Bool(self.alt_click_toggle)],
+            )?;
+        }
+        self.last_alt_click = alt_click_now;
+
         // send overlay parameters every 0.1 seconds
         if self.last_sent_overlay.elapsed().as_millis() >= 100 {
             self.last_sent_overlay = Instant::now();
